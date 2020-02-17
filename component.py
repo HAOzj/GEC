@@ -423,27 +423,119 @@ def greedy_decode(model, src, src_mask, max_len, start_symbol):
                            Variable(subsequent_mask(ys.size(1))
                                     .type_as(src.data)))
         prob = model.generator(out[:, -1])
-        _, next_word = torch.max(prob, dim=1)
+        _, next_word = torch.max(prob, dim=1) # max返回(values, indices)
         next_word = next_word.data[0]
         ys = torch.cat([ys, 
                         torch.ones(1, 1).type_as(src.data).fill_(next_word)], dim=1)
     return ys
 
 
-V = 11
-criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
-model = make_model(V, V, N=2)
-model_opt = NoamOpt(model.src_embed[0].d_model, 1, 400,
-        torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+# Beam Search
+def beam_search(model, src, src_mask, max_len, start_symbol, beam_width=4):
+    memory = model.encode(src, src_mask)
+    ys = torch.ones(1, 1).fill_(start_symbol).type_as(src.data)
+    beams = [(ys, 1)]
+    for _ in range(max_len-1):
+        beams_tmp = []
+        for ys in beams:
+            ys = ys[0]
+            out = model.decode(memory, src_mask, Variable(ys), 
+                                Variable(subsequent_mask(ys.size(1)).type_as(src.data))
+                                )
+            prob = model.generator(out[:, -1])
+            values, indices = torch.topk(prob, k=beam_width, dim=1)
+            for i in range(beam_width):
+                beams_tmp.append((
+                        torch.cat([ys, 
+                            torch.ones(1, 1).type_as(src.data).fill_(indices.data[0][i])], dim=1),
+                        values[0][i].item()
+                    )
+                )
+        beams = sorted(beams_tmp, key=lambda x: x[1], reverse=True)[: beam_width]
+    return beams
 
-for epoch in range(10):
-    model.train()
-    run_epoch(data_gen(V, 30, 20), model, 
-            SimpleLossCompute(model.generator, criterion, model_opt))
-    model.eval()
-    run_epoch(data_gen(V, 30, 5), model, 
-            SimpleLossCompute(model.generator, criterion, None))
-model.eval()
-src = Variable(torch.LongTensor([[1,2,3,4,5,6,7,8,9,10]]) )
-src_mask = Variable(torch.ones(1, 1, 10) )
-print(greedy_decode(model, src, src_mask, max_len=10, start_symbol=1))
+
+# Beam Search
+def iterative_decoding(model, src, src_mask, max_len, start_symbol, beam_width=4, threshold=1, padding_idx=0):
+    memory = model.encode(src, src_mask)
+    INF = 10000
+
+    while True:
+        print("src是", src)
+        ys = torch.ones(1, 1).fill_(start_symbol).type_as(src.data)
+        beams = [(ys, 1)]
+    
+        for _ in range(max_len-1):
+            beams_tmp = []
+            for ys in beams:
+                ys = ys[0]
+                out = model.decode(memory, src_mask, Variable(ys), 
+                                    Variable(subsequent_mask(ys.size(1)).type_as(src.data))
+                                    )
+                prob = model.generator(out[:, -1])
+                values, indices = torch.topk(prob, k=beam_width, dim=1)
+                for i in range(beam_width):
+                    beams_tmp.append((
+                            torch.cat([ys, 
+                                torch.ones(1, 1).type_as(src.data).fill_(indices.data[0][i])], dim=1),
+                            values[0][i].item()
+                        )
+                    )
+            beams = sorted(beams_tmp, key=lambda x: x[1], reverse=True)[: beam_width]
+
+        loss_identity = -INF
+        loss_non = - INF
+        H_non = None 
+        for beam in beams:
+            if beam[0].equal(src.data):
+                loss_identity = beam[1]
+            elif beam[1] > loss_non:
+                loss_non = beam[1]
+                H_non = beam[0]
+
+        # 如果需要rewrites
+        # 改变 src, src_mask
+        if loss_non > threshold * loss_identity:
+            src = H_non
+            src_mask = src != padding_idx
+            src_mask = Variable(src_mask)
+        else:
+            break 
+        
+    return src
+
+
+def main():
+    V = 11
+    PATH = "model"
+    if False:
+        criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
+        model = make_model(V, V, N=2)
+        model_opt = NoamOpt(model.src_embed[0].d_model, 1, 400,
+                torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+
+        for epoch in range(10):
+            model.train()
+            run_epoch(data_gen(V, 30, 20), model, 
+                    SimpleLossCompute(model.generator, criterion, model_opt))
+            model.eval()
+            run_epoch(data_gen(V, 30, 5), model, 
+                    SimpleLossCompute(model.generator, criterion, None))
+        model.eval()
+
+
+        # Save and Load
+        torch.save(model.state_dict(), PATH)
+    modelB = make_model(V, V, N=2)
+    modelB.load_state_dict(torch.load(PATH), strict=False)
+
+
+    # Test
+    src = Variable(torch.LongTensor([[1,2,3,4,5,6,7,8,9,10]]) )
+    src_mask = Variable(torch.ones(1, 1, 10) )
+    print(iterative_decoding(modelB, src, src_mask, max_len=10, start_symbol=1))
+
+
+if __name__ == "__main__":
+    main()
+
