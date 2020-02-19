@@ -308,7 +308,13 @@ def run_epoch(data_iter, model, loss_compute):
 # Training Data and Batching
 global max_src_in_batch, max_tgt_in_batch
 def batch_size_fn(new, count, sofar):
-    "Keep augmenting batch and calculate total number of tokens + padding."
+    """Keep augmenting batch and calculate total number of tokens + padding.
+
+    Arguments: 
+        new: new example to add.
+        count: current count of examples in the batch.
+        sofar: current effective batch size.
+    """
     global max_src_in_batch, max_tgt_in_batch
     if count == 1:
         max_src_in_batch = 0

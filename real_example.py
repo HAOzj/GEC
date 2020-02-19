@@ -8,11 +8,11 @@ from component import (
 
 if True:
     import spacy
-    spacy_de = spacy.load('de')
-    spacy_en = spacy.load('en')
+    spacy_fr = spacy.load('fr_core_news_sm')
+    spacy_en = spacy.load('en_core_web_sm')
 
-    def tokenize_de(text):
-        return [tok.text for tok in spacy_de.tokenizer(text)]
+    def tokenize_fr(text):
+        return [tok.text for tok in spacy_fr.tokenizer(text)]
 
     def tokenize_en(text):
         return [tok.text for tok in spacy_en.tokenizer(text)]
@@ -20,13 +20,18 @@ if True:
     BOS_WORD = '<s>'
     EOS_WORD = '</s>'
     BLANK_WORD = "<blank>"
-    SRC = data.Field(tokenize=tokenize_de, pad_token=BLANK_WORD)
+
+    # data.Field返回一个文本处理的datatype
+    SRC = data.Field(tokenize=tokenize_fr, pad_token=BLANK_WORD)
     TGT = data.Field(tokenize=tokenize_en, init_token = BOS_WORD, 
                      eos_token = EOS_WORD, pad_token=BLANK_WORD)
 
     MAX_LEN = 100
+
+    # splits返回 splits of datasets objects
+    # fields为data.Field类型
     train, val, test = datasets.IWSLT.splits(
-        exts=('.de', '.en'), fields=(SRC, TGT), 
+        exts=('.fr', '.en'), fields=(SRC, TGT), 
         filter_pred=lambda x: len(vars(x)['src']) <= MAX_LEN and 
             len(vars(x)['trg']) <= MAX_LEN)
     MIN_FREQ = 2
@@ -71,7 +76,7 @@ if True:
     valid_iter = MyIterator(val, batch_size=BATCH_SIZE, device=0,
                             repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
                             batch_size_fn=batch_size_fn, train=False)
-    model_par = nn.DataParallel(model, device_ids=devices)
+    # model_par = nn.DataParallel(model, device_ids=devices)
 
 
 if False:
@@ -80,7 +85,7 @@ if False:
     for epoch in range(10):
         model_par.train()
         model.train()
-        run_epoch((rebatch(pad_idx, b) for b in train_iter), 
+        run_epoch((rebatch(pad_idx, b) for b in train_iter),  # b 有src和tgt
                 #   model_par, 
                   model,
                   SimpleLossCompute(model.generator, criterion, 
