@@ -4,6 +4,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math, copy, time
 from torch.autograd import Variable
+from conf_loader import (
+    MAX_LEN, DROPOUT, BEAM_WIDTH,
+    D_FF, D_MODEL, H, N
+)
 
 
 class EncoderDecoder(nn.Module):
@@ -44,11 +48,12 @@ class Generator(nn.Module):
 
 
 def clones(module, N):
-    "Produce N identical layers."
+    """Produce N identical layers."""
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
+
 class LayerNorm(nn.Module):
-    "Construct a layernorm module (See citation for details)."
+    """Construct a layernorm module (See citation for details)."""
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
         self.a_2 = nn.Parameter(torch.ones(features))  # features取值为d_model
@@ -157,7 +162,7 @@ def attention(query, key, value, mask=None, dropout=None):
 
 
 class MultiHeadedAttention(nn.Module):
-    def __init__(self, h, d_model, dropout=0.1):
+    def __init__(self, h, d_model, dropout=DROPOUT):
         "Take in model size and number of heads."
         super(MultiHeadedAttention, self).__init__()
         assert d_model % h == 0
@@ -194,7 +199,7 @@ class MultiHeadedAttention(nn.Module):
 
 
 class PositionwiseFeedForward(nn.Module):
-    "Implements FFN equation."
+    """Implements FFN equation."""
     def __init__(self, d_model, d_ff, dropout=0.1):
         super(PositionwiseFeedForward, self).__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
@@ -216,8 +221,8 @@ class Embeddings(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    "Implement the PE function."
-    def __init__(self, d_model, dropout, max_len=5000):
+    """Implement the PE function."""
+    def __init__(self, d_model, dropout, max_len=MAX_LEN):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         
@@ -237,8 +242,8 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-def make_model(src_vocab, tgt_vocab, N=6, 
-               d_model=512, d_ff=2048, h=8, dropout=0.1):
+def make_model(src_vocab, tgt_vocab, N=N,
+               d_model=D_MODEL, d_ff=D_FF, h=H, dropout=DROPOUT):
     "Helper: Construct a model from hyperparameters."
     c = copy.deepcopy
     attn = MultiHeadedAttention(h, d_model)
@@ -262,7 +267,7 @@ def make_model(src_vocab, tgt_vocab, N=6,
 
 # Batches and Masking
 class Batch:
-    "Object for holding a batch of data with mask during training."
+    """Object for holding a batch of data with mask during training."""
     def __init__(self, src, trg=None, pad=0):
         self.src = src
         self.src_mask = (src != pad).unsqueeze(-2)
@@ -440,7 +445,7 @@ def greedy_decode(model, src, src_mask, max_len, start_symbol):
 
 
 # Beam Search
-def beam_search(model, src, src_mask, max_len, start_symbol, beam_width=4):
+def beam_search(model, src, src_mask, max_len, start_symbol, beam_width=BEAM_WIDTH):
     memory = model.encode(src, src_mask)
     ys = torch.ones(1, 1).fill_(start_symbol).type_as(src.data)
     beams = [(ys, 1)]
@@ -466,7 +471,7 @@ def beam_search(model, src, src_mask, max_len, start_symbol, beam_width=4):
 
 
 # Beam Search
-def iterative_decoding(model, src, src_mask, max_len, start_symbol, beam_width=4, threshold=1, padding_idx=0):
+def iterative_decoding(model, src, src_mask, max_len, start_symbol, beam_width=BEAM_WIDTH, threshold=1, padding_idx=0):
     memory = model.encode(src, src_mask)
     INF = 10000
 

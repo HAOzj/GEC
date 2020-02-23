@@ -90,9 +90,9 @@ model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
 PATH = "model/model_20200223"
 
 for epoch in range(10):
-    if True:
+    if False:
         model.train()
-        run_epoch((rebatch(pad_idx, b) for b in train_iter),  # b 有src和trg
+        run_epoch((rebatch(pad_idx, b) for b in train_iter),
                   model,
                   SimpleLossCompute(
                     model.generator, criterion,
@@ -105,33 +105,40 @@ for epoch in range(10):
         model.load_state_dict(torch.load(PATH), strict=False)
 
 
-    model.eval()
-    loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
-                     # model_par,
-                     model,
-                     SimpleLossCompute(model.generator, criterion,
-                                       opt=None)
+model.eval()
+loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
+                    model,
+                    SimpleLossCompute(
+                        model.generator, criterion,
+                        opt=None
                      )
-    print("验证集上loss为: ", loss)
+                 )
+print("验证集上loss为: ", loss)
 
 
-for i, batch in enumerate(train_iter):
+for i, batch in enumerate(valid_iter):
     src = batch.src.transpose(0, 1)[:1]
     src_mask = (src != SRC.vocab.stoi["<blank>"]).unsqueeze(-2)
+
+    # 原句子
     print("Source:", end="\t")
     for i in range(1, src.size(1)):
         sys = SRC.vocab.itos[src[0, i]]
         if sys == "</s>": break
         print(sys, end=" ")
-    out = beam_search(
+
+    # 预测
+    out = greedy_decode(
         model, src, src_mask,
-        max_len=MAX_LEN, start_symbol=TGT.vocab.stoi["<s>"])[0][0]
+        max_len=MAX_LEN, start_symbol=TGT.vocab.stoi["<s>"])
     print("\n\nTranslation:", end="\t")
     for i in range(1, out.size(1)):
         sym = TGT.vocab.itos[out[0, i]]
         if sym == "</s>": break
         print(sym, end=" ")
     print()
+
+    # 黄金答案
     print("Target:", end="\t")
     for i in range(1, batch.trg.size(0)):
         sym = TGT.vocab.itos[batch.trg.data[i, 0]]
@@ -139,3 +146,4 @@ for i, batch in enumerate(train_iter):
         print(sym, end=" ")
     print()
     break
+
