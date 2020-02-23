@@ -1,28 +1,27 @@
 import torch
-import torch.nn as nn
 from torchtext import data, datasets
 from component import (
     SimpleLossCompute, make_model, beam_search, LabelSmoothing,
     run_epoch, NoamOpt, Batch, batch_size_fn
 )
+from generate_json_for_dataset import OUTPUT_FILE
+
 
 if True:
     import spacy
-    spacy_fr = spacy.load('fr_core_news_sm')
-    spacy_en = spacy.load('en_core_web_sm')
 
-    def tokenize_fr(text):
-        return [tok.text for tok in spacy_fr.tokenizer(text)]
+    spacy_en = spacy.load('en_core_web_sm')
 
     def tokenize_en(text):
         return [tok.text for tok in spacy_en.tokenizer(text)]
+
 
     BOS_WORD = '<s>'
     EOS_WORD = '</s>'
     BLANK_WORD = "<blank>"
 
     # data.Field返回一个文本处理的datatype
-    SRC = data.Field(tokenize=tokenize_fr, pad_token=BLANK_WORD)
+    SRC = data.Field(tokenize=tokenize_en, pad_token=BLANK_WORD)
     TGT = data.Field(tokenize=tokenize_en, init_token=BOS_WORD,
                      eos_token=EOS_WORD, pad_token=BLANK_WORD)
 
@@ -30,10 +29,9 @@ if True:
 
     # splits返回 splits of datasets objects
     # fields为data.Field类型
-    train, val, test = datasets.IWSLT.splits(
-        exts=('.fr', '.en'), fields=(SRC, TGT), 
-        filter_pred=lambda x: len(vars(x)['src']) <= MAX_LEN and 
-            len(vars(x)['trg']) <= MAX_LEN)
+    fields = {"src": ("src", SRC), "trg": ("trg", TGT)}
+    ds = data.TabularDataset(path=OUTPUT_FILE, format='json', fields=fields)
+    train, val = ds.split(split_ratio=[0.8, 0.2])
     MIN_FREQ = 2
     SRC.build_vocab(train.src, min_freq=MIN_FREQ)
     TGT.build_vocab(train.trg, min_freq=MIN_FREQ)
@@ -49,12 +47,13 @@ class MyIterator(data.Iterator):
                         self.batch_size, self.batch_size_fn)
                     for b in random_shuffler(list(p_batch)):
                         yield b
+
             self.batches = pool(self.data(), self.random_shuffler)
-            
+
         else:
             self.batches = []
             for b in data.batch(self.data(), self.batch_size,
-                                          self.batch_size_fn):
+                                self.batch_size_fn):
                 self.batches.append(sorted(b, key=self.sort_key))
 
 
@@ -80,36 +79,34 @@ if True:
     # model_par = nn.DataParallel(model, device_ids=devices)
 
 
-if True:
-    model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
-            torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
-    for epoch in range(1):
-        # model_par.train()
-        model.train()
-        run_epoch((rebatch(pad_idx, b) for b in train_iter),  # b 有src和tgt
-                #   model_par, 
-                  model,
-                  SimpleLossCompute(model.generator, criterion, 
-                                    opt=model_opt)
-        )
-        # model_par.eval()
-        model.eval()
-        loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter), 
-                          # model_par,
-                         model,
-                          SimpleLossCompute(model.generator, criterion, 
-                          opt=None)
-        )
-        print(loss)
-else:
-    model = torch.load("iwslt.pt")
-
+model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
+                    torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+for epoch in range(10):
+    # model_par.train()
+    model.train()
+    run_epoch((rebatch(pad_idx, b) for b in train_iter),  # b 有src和trg
+              #   model_par,
+              model,
+              SimpleLossCompute(model.generator, criterion,
+                                opt=model_opt)
+              )
+    # model_par.eval()
+    PATH = "model_20200223"
+    torch.save(model.state_dict(), PATH)
+    model.eval()
+    loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
+                     # model_par,
+                     model,
+                     SimpleLossCompute(model.generator, criterion,
+                                       opt=None)
+                     )
+    print(loss)
 
 for i, batch in enumerate(valid_iter):
     src = batch.src.transpose(0, 1)[:1]
     src_mask = (src != SRC.vocab.stoi["<blank>"]).unsqueeze(-2)
     out = beam_search(model, src, src_mask,
-                        max_len=60, start_symbol=TGT.vocab.stoi["<s>"])
+                      max_len=60, start_symbol=TGT.vocab.stoi["<s>"])
     print("Translation:", end="\t")
     for i in range(1, out.size(1)):
         sym = TGT.vocab.itos[out[0, i]]

@@ -307,6 +307,8 @@ def run_epoch(data_iter, model, loss_compute):
 
 # Training Data and Batching
 global max_src_in_batch, max_tgt_in_batch
+
+
 def batch_size_fn(new, count, sofar):
     """Keep augmenting batch and calculate total number of tokens + padding.
 
@@ -353,7 +355,8 @@ class NoamOpt:
         return self.factor * \
             (self.model_size ** (-0.5) *
             min(step ** (-0.5), step * self.warmup ** (-1.5)))
-        
+
+
 def get_std_opt(model):
     return NoamOpt(model.src_embed[0].d_model, 2, 4000,
             torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
