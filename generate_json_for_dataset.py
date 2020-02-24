@@ -8,9 +8,10 @@ Created on FEB 21, 2020
 import json
 import os
 from optparse import OptionParser
-INPUT_FILE = "data/raw/fce/json/fce.train.json"
-OUTPUT_FILE = "data/processed/fce_processed_train.json"
-N = 100
+from conf_loader import (
+    INPUT_TRAIN_FILE, OUTPUT_TRAIN_FILE, NMB_LINES
+)
+
 
 
 def main(input_file, output_file, nmb_lines):
@@ -48,11 +49,11 @@ def main(input_file, output_file, nmb_lines):
 if __name__ == "__main__":
     optparser = OptionParser()
     optparser.add_option('-i', '--input_file', dest='input_file', help='待处理的fce语料的文件路径',
-                         type="string", default=INPUT_FILE)
+                         type="string", default=INPUT_TRAIN_FILE)
     optparser.add_option('-o', '--output_file', dest='output_file', help='输出的.json文件路径',
-                         type="string", default=OUTPUT_FILE)
+                         type="string", default=OUTPUT_TRAIN_FILE)
     optparser.add_option('-n', '--nmb_lines', dest='nmb_lines', help='处理的语料数',
-                         type="int", default=N)
+                         type="int", default=NMB_LINES)
     dirname = os.path.dirname(os.path.abspath(__file__))
     (options, args) = optparser.parse_args()
     main(options.input_file, options.output_file, options.nmb_lines)

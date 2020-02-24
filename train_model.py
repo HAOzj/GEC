@@ -1,11 +1,16 @@
 import torch
-from torchtext import data, datasets
+from torchtext import data
 from component import (
     SimpleLossCompute, make_model, LabelSmoothing,
     run_epoch, NoamOpt, Batch, batch_size_fn,
     greedy_decode, iterative_decoding, beam_search
 )
-from generate_json_for_dataset import OUTPUT_FILE
+from conf_loader import (
+    MAX_LEN, BATCH_SIZE, N,
+    OUTPUT_TRAIN_FILE, OUTPUT_DEV_FILE,
+    MODEL_PATH
+)
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -24,22 +29,20 @@ if True:
     BLANK_WORD = "<blank>"
 
     # data.Field返回一个文本处理的datatype
-    SRC = data.Field(tokenize=tokenize_en, pad_token=BLANK_WORD)
-    TGT = data.Field(tokenize=tokenize_en, init_token=BOS_WORD,
-                     eos_token=EOS_WORD, pad_token=BLANK_WORD)
-
-    MAX_LEN = 500
+    field = data.Field(tokenize=tokenize_en, init_token=BOS_WORD,
+                       eos_token=EOS_WORD, pad_token=BLANK_WORD)
 
     # splits返回 splits of datasets objects
     # fields为data.Field类型
-    fields = {"src": ("src", SRC), "trg": ("trg", TGT)}
-    ds = data.TabularDataset(path=OUTPUT_FILE, format='json', fields=fields)
-    train, val = ds.split(split_ratio=[0.8, 0.2])
-    MIN_FREQ = 2
-    SRC.build_vocab(ds, min_freq=MIN_FREQ)
-    TGT.build_vocab(ds, min_freq=MIN_FREQ)
-
-    print("val的样例有", val.__len__())
+    fields = {"src": ("src", field), "trg": ("trg", field)}
+    train = data.TabularDataset(path=OUTPUT_TRAIN_FILE, format='json', fields=fields,
+                             filter_pred=lambda x: len(vars(x)['src']) <= MAX_LEN and
+                                len(vars(x)['trg']) <= MAX_LEN)
+    val = data.TabularDataset(path=OUTPUT_DEV_FILE, format='json', fields=fields,
+                             filter_pred=lambda x: len(vars(x)['src']) <= MAX_LEN and
+                                len(vars(x)['trg']) <= MAX_LEN)
+    field.build_vocab(train, vectors="glove.6B.200d")
+    vocab = field.vocab
 
 
 class MyIterator(data.Iterator):
@@ -69,28 +72,29 @@ def rebatch(pad_idx, batch):
 
 
 if True:
-    pad_idx = TGT.vocab.stoi["<blank>"]
-    model = make_model(len(SRC.vocab), len(TGT.vocab), N=6)
-    criterion = LabelSmoothing(size=len(TGT.vocab), padding_idx=pad_idx, smoothing=0.1)
-    BATCH_SIZE = 100
-    train_iter = MyIterator(train, batch_size=BATCH_SIZE, device=0,
-                            repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
+    pad_idx = field.vocab.stoi["<blank>"]
+    model = make_model(len(field.vocab), len(field.vocab), N=N)
+
+    # 载入预训练的词向量
+    model.src_embed[0].lut.weight.data.copy_(vocab.vectors)
+    model.tgt_embed[0].lut.weight.data.copy_(vocab.vectors)
+
+    criterion = LabelSmoothing(size=len(field.vocab), padding_idx=pad_idx, smoothing=0.1)
+
+    train_iter = MyIterator(train, batch_size=BATCH_SIZE, repeat=False,
+                            sort_key=lambda x: (len(x.src), len(x.trg)),
                             batch_size_fn=batch_size_fn, train=True)
-    # valid_iter = MyIterator(val, batch_size=BATCH_SIZE, device=0,
-    #                         repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                         batch_size_fn=batch_size_fn, train=False)
-    valid_iter = data.Iterator(val, batch_size=10, device=0,
-                            repeat=False, sort_key=lambda x: (len(x.src), len(x.trg)),
-                            train=False)
-    print("valid有:{}批".format(valid_iter.__len__()))
+    valid_iter = MyIterator(val, batch_size=BATCH_SIZE, repeat=False,
+                            sort_key=lambda x: (len(x.src), len(x.trg)),
+                            batch_size_fn=batch_size_fn, train=False)
 
 
 model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
                     torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
-PATH = "model/model_20200223"
+
 
 for epoch in range(10):
-    if False:
+    if True:
         model.train()
         run_epoch((rebatch(pad_idx, b) for b in train_iter),
                   model,
@@ -100,7 +104,7 @@ for epoch in range(10):
                   )
         )
 
-        torch.save(model.state_dict(), PATH)
+        torch.save(model.state_dict(), MODEL_PATH)
     else:
         model.load_state_dict(torch.load(PATH), strict=False)
 
@@ -118,22 +122,22 @@ print("验证集上loss为: ", loss)
 
 for i, batch in enumerate(valid_iter):
     src = batch.src.transpose(0, 1)[:1]
-    src_mask = (src != SRC.vocab.stoi["<blank>"]).unsqueeze(-2)
+    src_mask = (src != field.vocab.stoi["<blank>"]).unsqueeze(-2)
 
     # 原句子
     print("Source:", end="\t")
     for i in range(1, src.size(1)):
-        sys = SRC.vocab.itos[src[0, i]]
+        sys = field.vocab.itos[src[0, i]]
         if sys == "</s>": break
         print(sys, end=" ")
 
     # 预测
     out = greedy_decode(
         model, src, src_mask,
-        max_len=MAX_LEN, start_symbol=TGT.vocab.stoi["<s>"])
+        max_len=MAX_LEN, start_symbol=field.vocab.stoi["<s>"])
     print("\n\nTranslation:", end="\t")
     for i in range(1, out.size(1)):
-        sym = TGT.vocab.itos[out[0, i]]
+        sym = field.vocab.itos[out[0, i]]
         if sym == "</s>": break
         print(sym, end=" ")
     print()
@@ -141,7 +145,7 @@ for i, batch in enumerate(valid_iter):
     # 黄金答案
     print("Target:", end="\t")
     for i in range(1, batch.trg.size(0)):
-        sym = TGT.vocab.itos[batch.trg.data[i, 0]]
+        sym = field.vocab.itos[batch.trg.data[i, 0]]
         if sym == "</s>": break
         print(sym, end=" ")
     print()
