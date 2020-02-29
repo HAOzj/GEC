@@ -71,19 +71,32 @@ def rebatch(pad_idx, batch):
     return Batch(src, trg, pad_idx)
 
 
-# Loss Computation
 class LossCompute:
     """A loss compute and train function."""
-
     def __init__(self, generator, criterion, opt=None):
+        """计算batch损失.
+
+        因为generator加了softmax, 所以用了KLDivLoss,如果没有softmax就用CrossEntropyLoss
+        Args:
+            generator(nn.Linear) :- linear + softmax
+        """
         self.generator = generator
         self.criterion = criterion
         self.opt = opt
 
-    def step(self):
-        self.opt.step()
-
     def __call__(self, x, y, norm):
+        """计算一个batch的样例
+
+        x应该第二个维度是 V
+
+        Args:
+            x: d_model-dim
+            y: 真实的index
+            norm: 在这里是ntokens
+
+        Returns:
+            该样例的总loss
+        """
         x = self.generator(x)
         loss = self.criterion(x.contiguous().view(-1, x.size(-1)),
                               y.contiguous().view(-1)) / norm
@@ -111,9 +124,6 @@ if True:
     valid_iter = data.Iterator(val, batch_size=BATCH_SIZE, repeat=False,
                             sort_key=lambda x: (len(x.src), len(x.trg)),
                             train=False)
-    # valid_iter = MyIterator(val, batch_size=BATCH_SIZE, repeat=False,
-    #                         sort_key=lambda x: (len(x.src), len(x.trg)),
-    #                         batch_size_fn=batch_size_fn, train=False)
 
 
 model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
@@ -123,6 +133,7 @@ model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
 if True:
     for epoch in range(10):
         model.train()
+        print("第{}个epoch".format(epoch))
         run_epoch((rebatch(pad_idx, b) for b in train_iter),
                   model,
                   # SimpleLossCompute(

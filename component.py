@@ -17,18 +17,29 @@ class EncoderDecoder(nn.Module):
     """
     def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
         super(EncoderDecoder, self).__init__()
-        self.encoder = encoder # self-attn + ffn, 每一层都要先norm,进入sublayer,然后dropout,输出再residual
+
+        # self-attn + ffn
+        # 每一层都要先layerNorm,进入self-attn或ffn,然后dropout,输出再residual
+        # N层后还要layerNorm
+        self.encoder = encoder
+
         self.decoder = decoder # self-attn + encoder-decoder attn + ffn
         self.src_embed = src_embed  # positional embedding + word embedding
         self.tgt_embed = tgt_embed
-        self.generator = generator
+        self.generator = generator # d_model -> V
 
     def forward(self, src, tgt, src_mask, tgt_mask):
-        """Take in and process masked src and target sequences."""
-        return self.decode(self.encode(src, src_mask), src_mask,
-                            tgt, tgt_mask) 
-                            # tgt_mask用在decoder的self attn, src_mask用在encoder-decoder attn
-                            # src_mask是mask掉blank, tgt在src_mask基础上再mask掉subsequent tokens
+        """Take in and process masked src and target sequences.
+
+        src_mask用在encoder-decoder attn
+        tgt_mask用在decoder的self attn
+        src_mask是mask掉blank, tgt在src_mask基础上再mask掉subsequent tokens
+        """
+        return self.decode(
+            memory=self.encode(src, src_mask),
+            src_mask=src_mask,
+            tgt=tgt, tgt_mask=tgt_mask
+        )
 
     def encode(self, src, src_mask):
         return self.encoder(self.src_embed(src), src_mask)
@@ -53,7 +64,10 @@ def clones(module, N):
 
 
 class LayerNorm(nn.Module):
-    """Construct a layernorm module (See citation for details)."""
+    """Layer normalization.
+
+    input and output are of the same dim
+    """
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
         self.a_2 = nn.Parameter(torch.ones(features))  # features取值为d_model
@@ -244,7 +258,7 @@ class PositionalEncoding(nn.Module):
 
 def make_model(src_vocab, tgt_vocab, N=N,
                d_model=D_MODEL, d_ff=D_FF, h=H, dropout=DROPOUT):
-    "Helper: Construct a model from hyperparameters."
+    """Helper: Construct a model from hyperparameters."""
     c = copy.deepcopy
     attn = MultiHeadedAttention(h, d_model)
     ff = PositionwiseFeedForward(d_model, d_ff, dropout)
@@ -289,7 +303,10 @@ class Batch:
 
 # Training Loop
 def run_epoch(data_iter, model, loss_compute):
-    """Standard Training and Logging Function"""
+    """Standard Training and Logging Function
+
+    model outputs a layer-normed d_model-dim vector
+    """
     start = time.time()
     total_tokens = 0
     total_loss = 0
@@ -301,10 +318,10 @@ def run_epoch(data_iter, model, loss_compute):
         total_loss += loss
         total_tokens += batch.ntokens
         tokens += batch.ntokens
-        if i % 50 == 1:
+        if i % 50 == 49:
             elapsed = time.time() - start
-            print("Epoch Step: %d Loss: %f Tokens per Sec: %f Num of tokens: %d" %
-                    (i, loss / batch.ntokens, tokens / elapsed, batch.ntokens))
+            print("Batch Num: %d Loss: %f Tokens per Sec: %f Num of tokens: %d" %
+                    (i+1, loss / batch.ntokens, tokens / elapsed, batch.ntokens))
             start = time.time()
             tokens = 0
     return total_loss / total_tokens
@@ -372,6 +389,8 @@ class LabelSmoothing(nn.Module):
     """Implement label smoothing."""
     def __init__(self, size, padding_idx, smoothing=0.0):
         super(LabelSmoothing, self).__init__()
+
+        # KLDivLoss需要传入prob
         self.criterion = nn.KLDivLoss(reduction="sum")
         self.padding_idx = padding_idx
         self.confidence = 1.0 - smoothing
@@ -417,8 +436,18 @@ class SimpleLossCompute:
         self.opt = opt
         
     def __call__(self, x, y, norm):
+        """计算mini batch的损失
+
+        Args:
+            x: d_model,经过generator变成V-dim
+            y: 真实index
+            norm: 在这里是ntokens
+
+        Returns:
+            该batch的总loss
+        """
         x = self.generator(x)
-        loss = self.criterion(x.contiguous().view(-1, x.size(-1)), 
+        loss = self.criterion(x.contiguous().view(-1, x.size(-1)),
                               y.contiguous().view(-1)) / norm
         loss.backward()
         if self.opt is not None:
