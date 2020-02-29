@@ -9,15 +9,15 @@ H = 8
 
 
 # training
-BATCH_SIZE = 100
+BATCH_SIZE = 500
 
 
 # load data
-INPUT_TRAIN_FILE = "data/raw/fce/json/fce.train.json"
-OUTPUT_TRAIN_FILE = "data/processed/fce_processed_train.json"
+INPUT_TRAIN_FILE = "data/raw/fce/m2/fce.train.gold.bea19.m2"
+OUTPUT_TRAIN_FILE = "data/processed/fce_train.json"
 
-INPUT_DEV_FILE = "data/raw/fce/json/fce.dev.json"
-OUTPUT_DEV_FILE = "data/processed/fce_processed_dev.json"
+INPUT_DEV_FILE = "data/raw/fce/m2/fce.dev.gold.bea19.m2"
+OUTPUT_DEV_FILE = "data/processed/fce_dev.json"
 
 NMB_LINES = 100
 

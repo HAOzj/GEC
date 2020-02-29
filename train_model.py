@@ -29,20 +29,20 @@ if True:
     BLANK_WORD = "<blank>"
 
     # data.Field返回一个文本处理的datatype
-    field = data.Field(tokenize=tokenize_en, init_token=BOS_WORD,
-                       eos_token=EOS_WORD, pad_token=BLANK_WORD)
+    SRC = data.Field(tokenize=tokenize_en, init_token=BOS_WORD,
+                     eos_token=EOS_WORD, pad_token=BLANK_WORD)
 
     # splits返回 splits of datasets objects
     # fields为data.Field类型
-    fields = {"src": ("src", field), "trg": ("trg", field)}
+    fields = {"src": ("src", SRC), "trg": ("trg", SRC)}
     train = data.TabularDataset(path=OUTPUT_TRAIN_FILE, format='json', fields=fields,
                              filter_pred=lambda x: len(vars(x)['src']) <= MAX_LEN and
                                 len(vars(x)['trg']) <= MAX_LEN)
     val = data.TabularDataset(path=OUTPUT_DEV_FILE, format='json', fields=fields,
                              filter_pred=lambda x: len(vars(x)['src']) <= MAX_LEN and
                                 len(vars(x)['trg']) <= MAX_LEN)
-    field.build_vocab(train, vectors="glove.6B.200d")
-    vocab = field.vocab
+    SRC.build_vocab(train, vectors="glove.6B.200d")
+    vocab = SRC.vocab
 
 
 class MyIterator(data.Iterator):
@@ -71,73 +71,106 @@ def rebatch(pad_idx, batch):
     return Batch(src, trg, pad_idx)
 
 
+# Loss Computation
+class LossCompute:
+    """A loss compute and train function."""
+
+    def __init__(self, generator, criterion, opt=None):
+        self.generator = generator
+        self.criterion = criterion
+        self.opt = opt
+
+    def step(self):
+        self.opt.step()
+
+    def __call__(self, x, y, norm):
+        x = self.generator(x)
+        loss = self.criterion(x.contiguous().view(-1, x.size(-1)),
+                              y.contiguous().view(-1)) / norm
+        loss.backward()
+        if self.opt is not None:
+            self.opt.step()
+            self.opt.zero_grad()
+        return loss.item() * norm
+
+
 if True:
-    pad_idx = field.vocab.stoi["<blank>"]
-    model = make_model(len(field.vocab), len(field.vocab), N=N)
+    pad_idx = SRC.vocab.stoi["<blank>"]
+    model = make_model(len(SRC.vocab), len(SRC.vocab), N=N)
+    print("vocab_size={}".format(len(SRC.vocab)))
 
     # 载入预训练的词向量
     model.src_embed[0].lut.weight.data.copy_(vocab.vectors)
     model.tgt_embed[0].lut.weight.data.copy_(vocab.vectors)
 
-    criterion = LabelSmoothing(size=len(field.vocab), padding_idx=pad_idx, smoothing=0.1)
+    criterion = LabelSmoothing(size=len(SRC.vocab), padding_idx=pad_idx, smoothing=0.1)
 
     train_iter = MyIterator(train, batch_size=BATCH_SIZE, repeat=False,
                             sort_key=lambda x: (len(x.src), len(x.trg)),
                             batch_size_fn=batch_size_fn, train=True)
-    valid_iter = MyIterator(val, batch_size=BATCH_SIZE, repeat=False,
+    valid_iter = data.Iterator(val, batch_size=BATCH_SIZE, repeat=False,
                             sort_key=lambda x: (len(x.src), len(x.trg)),
-                            batch_size_fn=batch_size_fn, train=False)
+                            train=False)
+    # valid_iter = MyIterator(val, batch_size=BATCH_SIZE, repeat=False,
+    #                         sort_key=lambda x: (len(x.src), len(x.trg)),
+    #                         batch_size_fn=batch_size_fn, train=False)
 
 
 model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
                     torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-for epoch in range(10):
-    if True:
+if True:
+    for epoch in range(10):
         model.train()
         run_epoch((rebatch(pad_idx, b) for b in train_iter),
                   model,
-                  SimpleLossCompute(
-                    model.generator, criterion,
-                    opt=model_opt
+                  # SimpleLossCompute(
+                  #   model.generator, criterion,
+                  #   opt=model_opt
+                  # )
+                  LossCompute(
+                      model.generator, criterion,
+                      opt=torch.optim.Adam(
+                          params=model.parameters()
+                      )
                   )
         )
 
-        torch.save(model.state_dict(), MODEL_PATH)
-    else:
-        model.load_state_dict(torch.load(PATH), strict=False)
+        torch.save(model.state_dict(), MODEL_PATH+"_{}".format(epoch))
+else:
+    model.load_state_dict(torch.load(MODEL_PATH), strict=False)
 
 
 model.eval()
-loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
-                    model,
-                    SimpleLossCompute(
-                        model.generator, criterion,
-                        opt=None
-                     )
-                 )
-print("验证集上loss为: ", loss)
+# loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
+#                     model,
+#                     SimpleLossCompute(
+#                         model.generator, criterion,
+#                         opt=None
+#                      )
+#                  )
+# print("验证集上loss为: ", loss)
 
 
 for i, batch in enumerate(valid_iter):
     src = batch.src.transpose(0, 1)[:1]
-    src_mask = (src != field.vocab.stoi["<blank>"]).unsqueeze(-2)
+    src_mask = (src != SRC.vocab.stoi["<blank>"]).unsqueeze(-2)
 
     # 原句子
     print("Source:", end="\t")
     for i in range(1, src.size(1)):
-        sys = field.vocab.itos[src[0, i]]
+        sys = SRC.vocab.itos[src[0, i]]
         if sys == "</s>": break
         print(sys, end=" ")
 
     # 预测
-    out = greedy_decode(
+    out = beam_search(
         model, src, src_mask,
-        max_len=MAX_LEN, start_symbol=field.vocab.stoi["<s>"])
+        max_len=MAX_LEN, start_symbol=SRC.vocab.stoi["<s>"])[0][0]
     print("\n\nTranslation:", end="\t")
     for i in range(1, out.size(1)):
-        sym = field.vocab.itos[out[0, i]]
+        sym = SRC.vocab.itos[out[0, i]]
         if sym == "</s>": break
         print(sym, end=" ")
     print()
@@ -145,7 +178,7 @@ for i, batch in enumerate(valid_iter):
     # 黄金答案
     print("Target:", end="\t")
     for i in range(1, batch.trg.size(0)):
-        sym = field.vocab.itos[batch.trg.data[i, 0]]
+        sym = SRC.vocab.itos[batch.trg.data[i, 0]]
         if sym == "</s>": break
         print(sym, end=" ")
     print()
