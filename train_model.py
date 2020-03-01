@@ -152,6 +152,10 @@ model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
 
 if True:
     def plot(x, y1, y2):
+        """plot loss curve.
+
+        How loss goes with time.
+        """
         import matplotlib.pyplot as plt
         plt.plot(x, y1, label="loss on training set")
         plt.plot(x, y2, label="loss on valid set")
