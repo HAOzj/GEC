@@ -9,7 +9,7 @@ H = 8
 
 
 # training
-BATCH_SIZE = 500
+BATCH_SIZE = 1000
 
 
 # load data

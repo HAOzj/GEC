@@ -118,28 +118,56 @@ if True:
 
     criterion = LabelSmoothing(size=len(SRC.vocab), padding_idx=pad_idx, smoothing=0.1)
 
-    train_iter = MyIterator(train, batch_size=BATCH_SIZE, repeat=False,
+    train_iter = data.BucketIterator(train, batch_size=BATCH_SIZE, repeat=False,
                             sort_key=lambda x: (len(x.src), len(x.trg)),
                             batch_size_fn=batch_size_fn, train=True)
-    valid_iter = data.Iterator(val, batch_size=BATCH_SIZE, repeat=False,
+    valid_iter = data.BucketIterator(val, batch_size=BATCH_SIZE, repeat=False,
                             sort_key=lambda x: (len(x.src), len(x.trg)),
                             train=False)
 
 
+def check_ntokens(iter):
+    for batch in iter:
+        print(batch.src.size())
+        src = batch.src.transpose(0, 1)
+        ntokens = 0
+        for i in range(1, src.size(0)):
+            print("\n{}个数据".format(i))
+            for j in range(1, src.size(1)):
+                sys = SRC.vocab.itos[src[i, j]]
+                if sys == "</s>": continue
+                ntokens += 1
+                print(sys, end=" ")
+        break
+    print("一共有{}tokens".format(ntokens))
+
+
+# check_ntokens(train_iter)
+# import sys
+# sys.exit()
+    
 model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
                     torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-if False:
+if True:
+    def plot(x, y1, y2):
+        import matplotlib.pyplot as plt
+        plt.plot(x, y1, label="loss on training set")
+        plt.plot(x, y2, label="loss on valid set")
+        plt.xlabel("epoch")
+        plt.ylabel("loss per token")
+        plt.legend()
+        plt.show()
+
+    x = []
+    loss_train = []
+    loss_valid = []
     for epoch in range(10):
         model.train()
         print("第{}个epoch".format(epoch))
-        run_epoch((rebatch(pad_idx, b) for b in train_iter),
+        loss = run_epoch((rebatch(pad_idx, b) for b in train_iter),
                   model,
-                  # SimpleLossCompute(
-                  #   model.generator, criterion,
-                  #   opt=model_opt
-                  # )
                   LossCompute(
                       model.generator, criterion,
                       opt=torch.optim.Adam(
@@ -147,22 +175,39 @@ if False:
                       )
                   )
         )
+        x.append(epoch)
+        loss_train.append(loss)
 
-        torch.save(model.state_dict(), MODEL_PATH+"_{}".format(epoch))
+        torch.save(model.state_dict(), MODEL_PATH+"_{}_bucket".format(epoch))
+        model.eval()
+        loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
+                         model,
+                         SimpleLossCompute(
+                             model.generator, criterion,
+                             opt=None
+                         )
+        )
+        loss_valid.append(loss)
+        model.train()
+
+
+    plot(x, loss_train, loss_valid)
 else:
     PATH = f"{MODEL_PATH}_9"
     model.load_state_dict(torch.load(PATH), strict=False)
 
 
 model.eval()
-# loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
-#                     model,
-#                     SimpleLossCompute(
-#                         model.generator, criterion,
-#                         opt=None
-#                      )
-#                  )
-# print("验证集上loss为: ", loss)
+loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
+                    model,
+                    SimpleLossCompute(
+                        model.generator, criterion,
+                        opt=None
+                     )
+                 )
+print("验证集上loss为: ", loss)
+import sys
+sys.exit()
 
 ITERATIVE_FLAG = True
 if ITERATIVE_FLAG:
