@@ -130,7 +130,7 @@ model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
                     torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
 
 
-if True:
+if False:
     for epoch in range(10):
         model.train()
         print("第{}个epoch".format(epoch))
@@ -150,7 +150,8 @@ if True:
 
         torch.save(model.state_dict(), MODEL_PATH+"_{}".format(epoch))
 else:
-    model.load_state_dict(torch.load(MODEL_PATH), strict=False)
+    PATH = f"{MODEL_PATH}_9"
+    model.load_state_dict(torch.load(PATH), strict=False)
 
 
 model.eval()
@@ -163,23 +164,33 @@ model.eval()
 #                  )
 # print("验证集上loss为: ", loss)
 
+ITERATIVE_FLAG = True
+if ITERATIVE_FLAG:
+    print("使用iterative decoding")
 
-for i, batch in enumerate(valid_iter):
-    src = batch.src.transpose(0, 1)[:1]
+for batch in valid_iter:
+    src = batch.src.transpose(0, 1)[1:2]
+    tgt = batch.trg.transpose(0, 1)[1:2]
     src_mask = (src != SRC.vocab.stoi["<blank>"]).unsqueeze(-2)
 
     # 原句子
-    print("Source:", end="\t")
+    print("\nSource:", end="\t")
     for i in range(1, src.size(1)):
         sys = SRC.vocab.itos[src[0, i]]
         if sys == "</s>": break
         print(sys, end=" ")
 
     # 预测
-    out = beam_search(
-        model, src, src_mask,
-        max_len=MAX_LEN, start_symbol=SRC.vocab.stoi["<s>"])[0][0]
-    print("\n\nTranslation:", end="\t")
+    if ITERATIVE_FLAG:
+        out = iterative_decoding(
+            model, src, src_mask,
+            max_len=MAX_LEN, start_symbol=SRC.vocab.stoi["<s>"]
+        )
+    else:
+        out = beam_search(
+            model, src, src_mask,
+            max_len=MAX_LEN, start_symbol=SRC.vocab.stoi["<s>"])[0][0]
+    print("\nCorrection:", end="\t")
     for i in range(1, out.size(1)):
         sym = SRC.vocab.itos[out[0, i]]
         if sym == "</s>": break
@@ -188,10 +199,10 @@ for i, batch in enumerate(valid_iter):
 
     # 黄金答案
     print("Target:", end="\t")
-    for i in range(1, batch.trg.size(0)):
-        sym = SRC.vocab.itos[batch.trg.data[i, 0]]
+    for i in range(1, tgt.size(1)):
+        sym = SRC.vocab.itos[tgt[0, i]]
         if sym == "</s>": break
         print(sym, end=" ")
     print()
-    break
+
 

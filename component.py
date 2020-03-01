@@ -473,9 +473,12 @@ def greedy_decode(model, src, src_mask, max_len, start_symbol):
     return ys
 
 
-# Beam Search
 def beam_search(model, src, src_mask, max_len, start_symbol, beam_width=BEAM_WIDTH):
     memory = model.encode(src, src_mask)
+    """Beam search.
+    
+    output the best <beam_width> answers with their probs
+    """
     ys = torch.ones(1, 1).fill_(start_symbol).type_as(src.data)
     beams = [(ys, 1)]
     for _ in range(max_len-1):
@@ -499,9 +502,13 @@ def beam_search(model, src, src_mask, max_len, start_symbol, beam_width=BEAM_WID
     return beams
 
 
-# Beam Search
 def iterative_decoding(model, src, src_mask, max_len, start_symbol, beam_width=BEAM_WIDTH, threshold=1, padding_idx=0):
     memory = model.encode(src, src_mask)
+    """Iterative decoding.
+    
+    Based off multi-round of beam search, select the best non-identity answer 
+    until the prob of the best answer is higher than the cost of the identity times <threshold>
+    """
     INF = 10000
 
     while True:
