@@ -141,33 +141,81 @@ def check_ntokens(iter):
         break
     print("一共有{}tokens".format(ntokens))
 
-
-# check_ntokens(train_iter)
-# import sys
-# sys.exit()
     
 model_opt = NoamOpt(model.src_embed[0].d_model, 1, 2000,
-                    torch.optim.Adam(model.parameters(), lr=0, betas=(0.9, 0.98), eps=1e-9))
+                    torch.optim.Adam(model.parameters(),
+                                     lr=0, betas=(0.9, 0.98),
+                                     eps=1e-9)
+                    )
 
 
-if True:
-    def plot(x, y1, y2):
-        """plot loss curve.
+def plot(x, y1, y2):
+    """plot loss curve.
 
-        How loss goes with time.
-        """
-        import matplotlib.pyplot as plt
-        plt.plot(x, y1, label="loss on training set")
-        plt.plot(x, y2, label="loss on valid set")
-        plt.xlabel("epoch")
-        plt.ylabel("loss per token")
-        plt.legend()
-        plt.show()
+    How loss goes with time.
+    """
+    import matplotlib.pyplot as plt
+    plt.plot(x, y1, label="loss on training set")
+    plt.plot(x, y2, label="loss on valid set")
+    plt.xlabel("epoch")
+    plt.ylabel("loss per token")
+    plt.legend()
+    plt.show()
 
+
+def plot_all(end):
+    import matplotlib.pyplot as plt
+    epoches = []
+    loss_train, loss_valid = [], []
+    for epoch in range(end):
+        print(f"开始{epoch+1}轮")
+        model.load_state_dict(
+            torch.load(f"{MODEL_PATH}_{epoch}_bucket"),
+            strict=False
+        )
+        model.eval()
+        loss = run_epoch((rebatch(pad_idx, b) for b in train_iter),
+                         model,
+                         LossCompute(model.generator, criterion)
+        )
+        epoches.append(epoch+1)
+        loss_train.append(loss)
+
+        loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
+                         model,
+                         SimpleLossCompute(model.generator, criterion)
+        )
+        loss_valid.append(loss)
+    plt.plot(epoches, loss_train, label="loss on training set")
+    plt.plot(epoches, loss_valid, label="loss on valid set")
+    for epoch, loss1, loss2 in zip(epoches, loss_train, loss_valid):
+        plt.annotate(f'({loss1})', xy=(epoch, loss1),
+                     xytext=(epoch, (loss1+loss2)/2),
+                     arrowprops=dict(facecolor='black', shrink=0.05))
+        plt.annotate(f'({loss2})', xy=(epoch, loss2), xytext=(epoch, loss2+0.2),
+                     arrowprops=dict(facecolor='black', shrink=0.05))
+    plt.xlabel("epoch")
+    plt.ylabel("loss per token")
+    plt.xlim((0, end+1))
+    plt.ylim((0, 2))
+    plt.legend()
+    plt.show()
+
+
+DRAW_FLAG = True
+if DRAW_FLAG:
+    plot_all(60)
+    import sys
+    sys.exit()
+
+TRAIN_FLAG = True
+if TRAIN_FLAG:
     x = []
     loss_train = []
     loss_valid = []
-    for epoch in range(10):
+    PATH = f"{MODEL_PATH}_49_bucket"
+    model.load_state_dict(torch.load(PATH), strict=False)
+    for epoch in range(50, 60):
         model.train()
         print("第{}个epoch".format(epoch))
         loss = run_epoch((rebatch(pad_idx, b) for b in train_iter),
@@ -194,24 +242,13 @@ if True:
         loss_valid.append(loss)
         model.train()
 
-
     plot(x, loss_train, loss_valid)
+    import sys
+    sys.exit()
 else:
-    PATH = f"{MODEL_PATH}_9"
+    PATH = f"{MODEL_PATH}_29"
     model.load_state_dict(torch.load(PATH), strict=False)
 
-
-model.eval()
-loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
-                    model,
-                    SimpleLossCompute(
-                        model.generator, criterion,
-                        opt=None
-                     )
-                 )
-print("验证集上loss为: ", loss)
-import sys
-sys.exit()
 
 ITERATIVE_FLAG = True
 if ITERATIVE_FLAG:
