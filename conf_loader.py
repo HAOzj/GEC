@@ -25,5 +25,8 @@ NMB_LINES = 100
 
 
 # model
-MODEL_PATH = "model/model_200_400"
+MODEL_PATH = f"model/model_{D_MODEL}_{D_FF}"
+
+# corpora
+CORPORA = "lang8"
 

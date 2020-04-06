@@ -8,12 +8,18 @@ from component import (
 from conf_loader import (
     MAX_LEN, BATCH_SIZE, N,
     OUTPUT_TRAIN_FILE, OUTPUT_DEV_FILE,
-    MODEL_PATH
+    MODEL_PATH, CORPORA
 )
 
 import warnings
 warnings.filterwarnings("ignore")
 
+GENE_FLAG = False  # 是否把损失写入文件
+DRAW_FLAG = False  # 是否把文件中的损失plot
+WRITE_FLAG = True  #
+TRAIN_FLAG = True
+TRAIN_FILE = f"train_loss_{CORPORA}.txt"
+VAL_FILE = f"val_loss_{CORPORA}.txt"
 
 if True:
     import spacy
@@ -163,7 +169,15 @@ def plot(x, y1, y2):
     plt.show()
 
 
-def plot_all(end, write_flag, train_file, valid_file):
+def plot_loss_curve(end, write_flag, train_file, valid_file):
+    """计算loss curve
+
+    Args:
+        end(int) :- plot的模型对应的最后的epoches数
+        write_flag(bool) :- 训练集和发展集上的损失是否写入文件
+        train_file(path) :- 训练集上的损失写入的文件
+        valid_file(path) :- 发展集上的损失写入的文件
+    """
     epoches = []
     loss_train, loss_valid = [], []
     for epoch in range(end):
@@ -225,25 +239,18 @@ def plot_file(train_file, val_file):
     plt.show()
 
 
-GENE_FLAG = False
-DRAW_FLAG = False
-WRITE_FLAG = True
-TRAIN_FILE = "train_loss.txt"
-VAL_FILE = "val_loss.txt"
 if GENE_FLAG:
-    plot_all(60, WRITE_FLAG, TRAIN_FILE, VAL_FILE)
+    plot_loss_curve(60, WRITE_FLAG, TRAIN_FILE, VAL_FILE)
 
 if DRAW_FLAG:
     plot_file(TRAIN_FILE, VAL_FILE)
 
-TRAIN_FLAG = False
+
 if TRAIN_FLAG:
     x = []
     loss_train = []
     loss_valid = []
-    PATH = f"{MODEL_PATH}_49_bucket"
-    model.load_state_dict(torch.load(PATH), strict=False)
-    for epoch in range(50, 60):
+    for epoch in range(60):
         model.train()
         print("第{}个epoch".format(epoch))
         loss = run_epoch((rebatch(pad_idx, b) for b in train_iter),
@@ -258,7 +265,7 @@ if TRAIN_FLAG:
         x.append(epoch)
         loss_train.append(loss)
 
-        torch.save(model.state_dict(), MODEL_PATH+"_{}_bucket".format(epoch))
+        torch.save(model.state_dict(), MODEL_PATH+"_{}_lang8".format(epoch))
         model.eval()
         loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
                          model,
