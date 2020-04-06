@@ -13,8 +13,10 @@ BATCH_SIZE = 1000
 
 
 # load data
-INPUT_TRAIN_FILE = "data/raw/fce/m2/fce.train.gold.bea19.m2"
-OUTPUT_TRAIN_FILE = "data/processed/fce_train.json"
+# INPUT_TRAIN_FILE = "data/raw/fce/m2/fce.train.gold.bea19.m2"
+# OUTPUT_TRAIN_FILE = "data/processed/fce_train.json"
+INPUT_TRAIN_FILE = "data/raw/lang8.bea19/lang8.train.auto.bea19.m2"
+OUTPUT_TRAIN_FILE = "data/processed/lang8_train.json"
 
 INPUT_DEV_FILE = "data/raw/fce/m2/fce.dev.gold.bea19.m2"
 OUTPUT_DEV_FILE = "data/processed/fce_dev.json"

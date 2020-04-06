@@ -163,8 +163,7 @@ def plot(x, y1, y2):
     plt.show()
 
 
-def plot_all(end):
-    import matplotlib.pyplot as plt
+def plot_all(end, write_flag, train_file, valid_file):
     epoches = []
     loss_train, loss_valid = [], []
     for epoch in range(end):
@@ -180,35 +179,64 @@ def plot_all(end):
         )
         epoches.append(epoch+1)
         loss_train.append(loss)
+        if write_flag:
+            with open(train_file, "a+") as fp:
+                fp.write(f"{epoch+1}_{loss}\n")
 
         loss = run_epoch((rebatch(pad_idx, b) for b in valid_iter),
                          model,
                          SimpleLossCompute(model.generator, criterion)
         )
         loss_valid.append(loss)
+        if write_flag:
+            with open(valid_file, "a+") as fp:
+                fp.write(f"{epoch+1}_{loss}\n")
+
+
+def plot_file(train_file, val_file):
+    epoches, loss_train, loss_valid = [], [], []
+    with open(train_file, "r") as fp:
+        lines = fp.readlines()
+        for line in lines:
+            ele = line.split("_")
+            epoches.append(int(ele[0]))
+            loss_train.append(float(ele[1]))
+    with open(val_file, "r") as fp:
+        lines = fp.readlines()
+        for line in lines:
+            ele = line.split("_")
+            loss_valid.append(float(ele[1]))
+    import matplotlib.pyplot as plt
+
     plt.plot(epoches, loss_train, label="loss on training set")
     plt.plot(epoches, loss_valid, label="loss on valid set")
     for epoch, loss1, loss2 in zip(epoches, loss_train, loss_valid):
-        plt.annotate(f'({loss1})', xy=(epoch, loss1),
-                     xytext=(epoch, (loss1+loss2)/2),
-                     arrowprops=dict(facecolor='black', shrink=0.05))
-        plt.annotate(f'({loss2})', xy=(epoch, loss2), xytext=(epoch, loss2+0.2),
-                     arrowprops=dict(facecolor='black', shrink=0.05))
+        if epoch % 10 == 0:
+            plt.annotate(f'({round(loss1, 3)})', xy=(epoch, loss1),
+                         xytext=(epoch, (loss1+loss2)/2),
+                         arrowprops=dict(facecolor='black', shrink=0.05))
+            plt.annotate(f'({round(loss2, 3)})', xy=(epoch, loss2), xytext=(epoch, loss2+0.2),
+                         arrowprops=dict(facecolor='black', shrink=0.05))
     plt.xlabel("epoch")
     plt.ylabel("loss per token")
-    plt.xlim((0, end+1))
+    plt.xlim((0, max(epoches)))
     plt.ylim((0, 2))
     plt.legend()
     plt.show()
 
 
-DRAW_FLAG = True
-if DRAW_FLAG:
-    plot_all(60)
-    import sys
-    sys.exit()
+GENE_FLAG = False
+DRAW_FLAG = False
+WRITE_FLAG = True
+TRAIN_FILE = "train_loss.txt"
+VAL_FILE = "val_loss.txt"
+if GENE_FLAG:
+    plot_all(60, WRITE_FLAG, TRAIN_FILE, VAL_FILE)
 
-TRAIN_FLAG = True
+if DRAW_FLAG:
+    plot_file(TRAIN_FILE, VAL_FILE)
+
+TRAIN_FLAG = False
 if TRAIN_FLAG:
     x = []
     loss_train = []
@@ -246,17 +274,18 @@ if TRAIN_FLAG:
     import sys
     sys.exit()
 else:
-    PATH = f"{MODEL_PATH}_29"
+    PATH = f"{MODEL_PATH}_59_bucket"
     model.load_state_dict(torch.load(PATH), strict=False)
 
 
-ITERATIVE_FLAG = True
+ITERATIVE_FLAG = False
 if ITERATIVE_FLAG:
     print("使用iterative decoding")
 
+i = 0
 for batch in valid_iter:
-    src = batch.src.transpose(0, 1)[1:2]
-    tgt = batch.trg.transpose(0, 1)[1:2]
+    src = batch.src.transpose(0, 1)[i:i+1]
+    tgt = batch.trg.transpose(0, 1)[i:i+1]
     src_mask = (src != SRC.vocab.stoi["<blank>"]).unsqueeze(-2)
 
     # 原句子
