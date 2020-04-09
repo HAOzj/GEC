@@ -247,9 +247,6 @@ if DRAW_FLAG:
 
 
 if TRAIN_FLAG:
-    x = []
-    loss_train = []
-    loss_valid = []
     for epoch in range(60):
         model.train()
         print("第{}个epoch".format(epoch))
@@ -262,8 +259,8 @@ if TRAIN_FLAG:
                       )
                   )
         )
-        x.append(epoch)
-        loss_train.append(loss)
+        with open(TRAIN_FILE, "a+") as fp:
+            fp.write(f"{epoch}_{loss}\n")
 
         torch.save(model.state_dict(), MODEL_PATH+"_{}_lang8".format(epoch))
         model.eval()
@@ -274,10 +271,10 @@ if TRAIN_FLAG:
                              opt=None
                          )
         )
-        loss_valid.append(loss)
+        with open(VAL_FILE, "a+") as fp:
+            fp.write(f"{epoch}_{loss}\n")
         model.train()
 
-    plot(x, loss_train, loss_valid)
     import sys
     sys.exit()
 else:
