@@ -23,10 +23,10 @@ class EncoderDecoder(nn.Module):
         # N层后还要layerNorm
         self.encoder = encoder
 
-        self.decoder = decoder # self-attn + encoder-decoder attn + ffn
+        self.decoder = decoder  # self-attn + encoder-decoder attn + ffn
         self.src_embed = src_embed  # positional embedding + word embedding
         self.tgt_embed = tgt_embed
-        self.generator = generator # d_model -> V
+        self.generator = generator  # d_model -> V
 
     def forward(self, src, tgt, src_mask, tgt_mask):
         """Take in and process masked src and target sequences.
@@ -138,7 +138,12 @@ class Decoder(nn.Module):
 
 
 class DecoderLayer(nn.Module):
-    """Decoder is made of self-attn, src-attn, and feed forward (defined below)"""
+    """Decoder is made of self-attn, src-attn, and feed forward (defined below)
+
+    每个先self attn,用了tgt mask,也就是mask空白词和后面的词;
+    然后src attn,用了src mask,也就是mask空白词，k和v都是encoder中算出的k和v;
+    最后ff
+    """
     def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
         super(DecoderLayer, self).__init__()
         self.size = size
@@ -158,7 +163,7 @@ class DecoderLayer(nn.Module):
 def subsequent_mask(size):
     """Mask out subsequent positions."""
     attn_shape = (1, size, size)
-    subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8') # triu上三角矩阵,k=1使得主对角线也为0
+    subsequent_mask = np.triu(np.ones(attn_shape), k=1).astype('uint8')  # triu上三角矩阵,k=1使得主对角线也为0
     return torch.from_numpy(subsequent_mask) == 0
 
 
@@ -177,7 +182,7 @@ def attention(query, key, value, mask=None, dropout=None):
 
 class MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, dropout=DROPOUT):
-        "Take in model size and number of heads."
+        """Take in model size and number of heads."""
         super(MultiHeadedAttention, self).__init__()
         assert d_model % h == 0
         # We assume d_v always equals d_k
@@ -188,7 +193,7 @@ class MultiHeadedAttention(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         
     def forward(self, query, key, value, mask=None):
-        "Implements Figure 2"
+        """Implements Figure 2"""
         if mask is not None:
             # Same mask applied to all h heads.
             mask = mask.unsqueeze(1)
@@ -242,13 +247,13 @@ class PositionalEncoding(nn.Module):
         
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1) # dim=[max_len, 1]
+        position = torch.arange(0, max_len).unsqueeze(1)  # dim=[max_len, 1]
         div_term = torch.exp(torch.arange(0, d_model, 2) *
                              -(math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe) # buffer不同于parameters不会被bp更新,但也会保存下来
+        self.register_buffer('pe', pe)  # buffer不同于parameters不会被bp更新,但也会保存下来
         
     def forward(self, x):
         x = x + Variable(self.pe[:, :x.size(1)], 
@@ -465,8 +470,8 @@ def greedy_decode(model, src, src_mask, max_len, start_symbol):
                            Variable(ys), 
                            Variable(subsequent_mask(ys.size(1))
                                     .type_as(src.data)))
-        prob = model.generator(out[:, -1]) # 最后一个位置
-        _, next_word = torch.max(prob, dim=1) # max返回(values, indices)
+        prob = model.generator(out[:, -1])  # 最后一个位置
+        _, next_word = torch.max(prob, dim=1)  # max返回(values, indices)
         next_word = next_word.data[0]
         ys = torch.cat([ys, 
                         torch.ones(1, 1).type_as(src.data).fill_(next_word)], dim=1)
